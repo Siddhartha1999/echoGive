@@ -51,6 +51,35 @@ contract DonationMatcher {
     // Constructor
     constructor() {
         owner = msg.sender;  // nominated owner is the address (wallet) that deploys the smart contract
+        
+        // Add initial recipients
+        // Save the Children
+        addRecipient(
+            "Save the Children", 
+            payable(0x4aAb2278a1325cFdbDF389e0664D100c74B95cf5), 
+            "Provides lifesaving aid and support to children in need worldwide."
+        );
+        
+        // American Cancer Society
+        addRecipient(
+            "American Cancer Society", 
+            payable(0xdab278b63a1e2bE659bC90acd733c4c106Dee16C), 
+            "Dedicated to eliminating cancer through research, education, and patient services."
+        );
+        
+        // Oceanic Society
+        addRecipient(
+            "Oceanic Society", 
+            payable(0xed0D9A1332E69A42fCAB0DFcd5fBfD68369acABF), 
+            "Works to conserve marine ecosystems and wildlife through research and education."
+        );
+        
+        // Little Princess Trust
+        addRecipient(
+            "Little Princess Trust", 
+            payable(0x52fcc1FBC1cD30f562474c1130be514b7FEed539), 
+            "Provides free real hair wigs to children and young people up to the age of 24, who have lost their own hair through cancer treatment or other conditions."
+        );
     }
     
     /**
@@ -59,10 +88,10 @@ contract DonationMatcher {
     // Function to allow the contract owner to add additional matching funds to the pool.
     // It is marked 'payable', meaning it can receive Ether when invoked.
     function addMatchingFunds() external payable onlyOwner {
-    // Increase the matching pool balance by the amount of Ether sent with this call
-    matchingPoolBalance += msg.value;
-    // Emit an event logging who added funds and how much was added
-    emit MatchingFundAdded(msg.sender, msg.value);
+        // Increase the matching pool balance by the amount of Ether sent with this call
+        matchingPoolBalance += msg.value;
+        // Emit an event logging who added funds and how much was added
+        emit MatchingFundAdded(msg.sender, msg.value);
     }
     
     /**
@@ -71,13 +100,13 @@ contract DonationMatcher {
      * @param _recipientAddress Wallet address of the recipient
      * @param _description Description of the recipient organization
      */
-     /*
+    /*
     This function allows the contract owner to register a new recipient organization. 
     It first validates the provided recipient address to ensure it’s not a zero address and not already registered. 
     Then it creates and stores a new recipient with specified details (name, address, description), marking them as approved. 
     Finally, it adds the recipient’s address to the list of approved recipients and emits an event signaling the addition.
      */
-    function addRecipient(string memory _name, address payable _recipientAddress, string memory _description) external onlyOwner {
+    function addRecipient(string memory _name, address payable _recipientAddress, string memory _description) public onlyOwner {
         require(_recipientAddress != address(0), "Invalid recipient address");
         require(recipients[_recipientAddress].walletAddress == address(0), "Recipient already exists");
         
@@ -98,7 +127,7 @@ contract DonationMatcher {
      * @dev Allows owner to remove a recipient
      * @param _recipientAddress Address of the recipient to remove
      */
-     /*
+    /*
     This function enables the contract owner to remove (disapprove) an existing recipient. 
     It first sets the recipient's approval status to false. 
     Then, it loops through the array of approved recipients, finds the matching recipient address, and efficiently removes it by swapping it with the last element and then popping it from the array. 
@@ -125,7 +154,7 @@ contract DonationMatcher {
      * @dev Allows anyone to donate to an approved recipient
      * @param _recipientAddress Address of the recipient
      */
-     /*
+    /*
     This function allows any user to donate Ether to an approved recipient. 
     It validates that the donation amount is greater than zero, updates the recipient's total received funds, and then calls a function (applyMatching) to apply any matching funds available. 
     After applying matching, it forwards the donated Ether directly to the recipient's wallet address and emits an event logging the donation details.
@@ -150,7 +179,7 @@ contract DonationMatcher {
      * @param _recipientAddress Address of the recipient
      * @param _amount Amount to match
      */
-     /*
+    /*
     This internal function applies matching funds to a recipient when a donation is made. 
     It calculates the matching amount based on the available balance in the matching pool—matching up to the donated amount but capped by the pool balance. 
     It then deducts the matching amount from the pool balance, updates the recipient's total matched funds, transfers the matched Ether directly to the recipient, and emits an event to document the matching action.
@@ -215,7 +244,7 @@ contract DonationMatcher {
      * @dev Allows the owner to withdraw any excess matching funds
      * @param _amount Amount to withdraw
      */
-     /*
+    /*
     This function allows the contract owner to withdraw a specified amount of Ether from the matching funds pool. 
     It ensures the withdrawal amount doesn't exceed the available balance, updates the pool balance accordingly, and transfers the Ether directly to the owner's wallet address.
      */
