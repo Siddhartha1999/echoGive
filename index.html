@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>echoGive</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.8.1/web3.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-600">echoGive</h1>
+            <p class="text-gray-600">All donations are matched 1:1 from our pool. <a href="https://sepoliafaucet.com/" target="_blank" class="text-blue-500 hover:underline">Get test ETH on Sepolia</a></p>
+        </header>
+
+        <div class="w-full max-w-lg mx-auto bg-white rounded-lg shadow-md p-6">
+            <!-- Connection Status -->
+            <div class="flex justify-between items-center mb-6">
+                <span id="network-name" class="text-gray-600">Not Connected</span>
+                <button id="connect-wallet" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                    Connect Wallet
+                </button>
+            </div>
+            
+            <!-- Charity Selector -->
+            <div class="mb-6">
+                <label class="block text-gray-700 mb-2">Select a charity:</label>
+                <select id="charity-selector" class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <option value="" disabled selected>Select a charity</option>
+                    <!-- Charities will be populated here -->
+                </select>
+            </div>
+            
+            <!-- Charity Info (Hidden by default) -->
+            <div id="charity-info" class="mb-6 hidden">
+                <h2 id="charity-name" class="text-xl font-semibold mb-2">Charity Name</h2>
+                <p id="charity-description" class="text-gray-600 mb-4">Description of the charity.</p>
+                <div class="text-sm text-gray-500 mb-4">
+                    <span>Address: </span>
+                    <span id="charity-address" class="font-mono">0x0000...0000</span>
+                </div>
+                
+                <!-- Donation Form -->
+                <div class="border-t pt-4">
+                    <label class="block text-gray-700 mb-2">Donation Amount (ETH):</label>
+                    <input type="number" id="donation-amount" min="0.001" step="0.001" 
+                           class="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400 mb-4" 
+                           placeholder="0.01">
+                    <button id="donate-button" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded disabled:bg-gray-300 disabled:cursor-not-allowed">
+                        Donate
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Transaction Status (Hidden by default) -->
+            <div id="tx-status" class="mt-6 hidden">
+                <h3 class="font-semibold mb-2">Transaction Details</h3>
+                <div class="p-2 bg-gray-50 rounded">
+                    <p>Donation Amount: <span id="donation-amount-display">0</span> ETH</p>
+                    <p>Matching Amount: <span id="matching-amount-display">0</span> ETH</p>
+                    <p>Total Sent to Charity: <span id="total-sent">0</span> ETH</p>
+                    <p>Transaction Status: <span id="tx-status-text">Pending...</span></p>
+                    <a id="tx-link" href="#" class="text-blue-500 hover:underline hidden" target="_blank">
+                        View on Etherscan
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Contract ABI
+        const contractABI = [
+            {
+                "inputs": [],
+                "name": "getApprovedRecipients",
+                "outputs": [{"internalType": "address[]", "name": "", "type": "address[]"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "_recipientAddress", "type": "address"}],
+                "name": "getRecipientDetails",
+                "outputs": [
+                    {"internalType": "string", "name": "name", "type": "string"},
+                    {"internalType": "address", "name": "walletAddress", "type": "address"},
+                    {"internalType": "string", "name": "description", "type": "string"},
+                    {"internalType": "bool", "name": "isApproved", "type": "bool"},
+                    {"internalType": "uint256", "name": "totalReceived", "type": "uint256"},
+                    {"internalType": "uint256", "name": "totalMatched", "type": "uint256"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "_recipientAddress", "type": "address"}],
+                "name": "donate",
+                "outputs": [],
+                "stateMutability": "payable",
+                "type": "function"
+            },
+            {
+                "anonymous": false,
+                "inputs": [
+                    {"indexed": true, "name": "donor", "type": "address"},
+                    {"indexed": true, "name": "recipient", "type": "address"},
+                    {"indexed": false, "name": "amount", "type": "uint256"}
+                ],
+                "name": "DonationReceived",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [
+                    {"indexed": true, "name": "recipient", "type": "address"},
+                    {"indexed": false, "name": "amount", "type": "uint256"}
+                ],
+                "name": "MatchingApplied",
+                "type": "event"
+            }
+        ];
+
+        // Replace with your deployed contract address on Sepolia
+        const contractAddress = "0x3328358128832A260C76A4141e19E2A943CD4B6D";
+        
+        // Variables
+        let web3;
+        let contract;
+        let userAccount;
+        let networkId;
+        let explorerUrl = "https://sepolia.etherscan.io";
+        
+        // DOM Elements
+        const connectWalletBtn = document.getElementById('connect-wallet');
+        const networkNameEl = document.getElementById('network-name');
+        const charitySelector = document.getElementById('charity-selector');
+        const charityInfo = document.getElementById('charity-info');
+        const charityName = document.getElementById('charity-name');
+        const charityDescription = document.getElementById('charity-description');
+        const charityAddress = document.getElementById('charity-address');
+        const donationAmount = document.getElementById('donation-amount');
+        const donateButton = document.getElementById('donate-button');
+        const txStatus = document.getElementById('tx-status');
+        const donationAmountDisplay = document.getElementById('donation-amount-display');
+        const matchingAmountDisplay = document.getElementById('matching-amount-display');
+        const totalSent = document.getElementById('total-sent');
+        const txStatusText = document.getElementById('tx-status-text');
+        const txLink = document.getElementById('tx-link');
+        
+        // Initialize the application
+        async function init() {
+            if (window.ethereum) {
+                web3 = new Web3(window.ethereum);
+                try {
+                    await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    startApp();
+                } catch (error) {
+                    console.error("User denied account access", error);
+                    alert("Please allow wallet access to use this app.");
+                }
+            } else {
+                alert('Please install MetaMask to use this application.');
+            }
+        }
+        
+        // Start the application
+        async function startApp() {
+            try {
+                const accounts = await web3.eth.getAccounts();
+                userAccount = accounts[0];
+                
+                networkId = await web3.eth.net.getId();
+                updateNetworkInfo(networkId);
+                
+                // Ensure Sepolia testnet
+                if (networkId !== 11155111) {
+                    alert("Please switch to the Sepolia testnet.");
+                    return;
+                }
+                
+                contract = new web3.eth.Contract(contractABI, contractAddress);
+                
+                connectWalletBtn.textContent = `${userAccount.substring(0, 6)}...${userAccount.substring(38)}`;
+                
+                await loadCharities();
+                setupEventListeners();
+                
+            } catch (error) {
+                console.error("Error initializing app:", error);
+                alert("Error connecting to the blockchain.");
+            }
+        }
+        
+        // Update network info
+        function updateNetworkInfo(networkId) {
+            const networkNames = {
+                1: "Ethereum Mainnet",
+                5: "Goerli Testnet",
+                11155111: "Sepolia Testnet",
+                80001: "Mumbai Testnet",
+                137: "Polygon Mainnet"
+            };
+            networkNameEl.textContent = networkNames[networkId] || `Network ID: ${networkId}`;
+        }
+        
+        // Load charities
+        async function loadCharities() {
+            try {
+                const approvedAddresses = await contract.methods.getApprovedRecipients().call();
+                
+                while (charitySelector.options.length > 1) {
+                    charitySelector.remove(1);
+                }
+                
+                if (approvedAddresses.length === 0) {
+                    charitySelector.innerHTML = '<option value="" disabled>No charities available</option>';
+                } else {
+                    for (const address of approvedAddresses) {
+                        const details = await contract.methods.getRecipientDetails(address).call();
+                        const option = document.createElement('option');
+                        option.value = address;
+                        option.textContent = details.name;
+                        option.dataset.description = details.description;
+                        charitySelector.appendChild(option);
+                    }
+                }
+                
+            } catch (error) {
+                console.error("Error loading charities:", error);
+                alert("Error loading charities.");
+            }
+        }
+        
+        // Setup event listeners
+        function setupEventListeners() {
+            connectWalletBtn.addEventListener('click', init);
+            
+            charitySelector.addEventListener('change', function() {
+                const selectedOption = charitySelector.options[charitySelector.selectedIndex];
+                const address = selectedOption.value;
+                
+                if (address) {
+                    charityName.textContent = selectedOption.textContent;
+                    charityDescription.textContent = selectedOption.dataset.description;
+                    charityAddress.textContent = `${address.substring(0, 6)}...${address.substring(38)}`;
+                    charityInfo.classList.remove('hidden');
+                } else {
+                    charityInfo.classList.add('hidden');
+                }
+            });
+            
+            donateButton.addEventListener('click', async function() {
+                const selectedAddress = charitySelector.value;
+                const amount = donationAmount.value;
+                
+                if (!selectedAddress || !amount || parseFloat(amount) <= 0) {
+                    alert("Please select a charity and enter a valid amount.");
+                    return;
+                }
+                
+                const amountInWei = web3.utils.toWei(amount, 'ether');
+                const balance = await web3.eth.getBalance(userAccount);
+                if (BigInt(balance) < BigInt(amountInWei)) {
+                    alert("Insufficient balance.");
+                    return;
+                }
+                
+                donateButton.disabled = true;
+                donateButton.textContent = "Processing...";
+                
+                txStatus.classList.remove('hidden');
+                txStatusText.textContent = "Pending...";
+                txLink.classList.add('hidden');
+                
+                try {
+                    const gasEstimate = await contract.methods.donate(selectedAddress).estimateGas({
+                        from: userAccount,
+                        value: amountInWei
+                    });
+                    
+                    const tx = await contract.methods.donate(selectedAddress).send({
+                        from: userAccount,
+                        value: amountInWei,
+                        gas: Math.floor(gasEstimate * 1.2)
+                    });
+                    
+                    const donationAmountEth = web3.utils.fromWei(amountInWei, 'ether');
+                    donationAmountDisplay.textContent = donationAmountEth;
+                    
+                    const matchingEvent = tx.events.MatchingApplied;
+                    const matchingAmountEth = matchingEvent ? web3.utils.fromWei(matchingEvent.returnValues.amount, 'ether') : "0";
+                    matchingAmountDisplay.textContent = matchingAmountEth;
+                    
+                    const totalSentEth = parseFloat(donationAmountEth) + parseFloat(matchingAmountEth);
+                    totalSent.textContent = totalSentEth.toFixed(4);
+                    
+                    txStatusText.textContent = "Confirmed!";
+                    txLink.href = `${explorerUrl}/tx/${tx.transactionHash}`;
+                    txLink.classList.remove('hidden');
+                    
+                    donateButton.disabled = false;
+                    donateButton.textContent = "Donate";
+                    alert("Donation successful!");
+                    
+                } catch (error) {
+                    console.error("Donation error:", error);
+                    txStatusText.textContent = "Failed";
+                    donateButton.disabled = false;
+                    donateButton.textContent = "Donate";
+                    alert("Donation failed.");
+                }
+            });
+        }
+        
+        // Start the app on page load
+        init();
+    </script>
+</body>
+</html>
